@@ -46,8 +46,8 @@ The locking mechanism will automatically create a `Locks` database in DynamoDB a
 
 ## API Documentation
 
-- [DynamoDB implementation](https://golang.org/pkg/greg-szabo/dsync/ddb/sync)
-- [dsync interface](https://golang.org/pkg/greg-szabo/dsync/dsync)
+- [DynamoDB implementation](https://godoc.org/github.com/greg-szabo/dsync/ddb/sync)
+- [dsync interface](https://godoc.org/github.com/greg-szabo/dsync/dsync)
 
 ## Acknowledgements
 
