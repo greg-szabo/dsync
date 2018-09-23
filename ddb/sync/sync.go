@@ -1,3 +1,5 @@
+// Package sync (DynamoDB implementation) provides a distributed mutex that stores the semaphore in DynamoDB
+// together with a value that can be shared across different processes.
 package sync
 
 import (
@@ -14,19 +16,32 @@ import (
 	"time"
 )
 
+// A Mutex is a mutual exclusion lock.
+// This version of a Mutex has extra properties for the AWS session and DynamoDB session details.
 type Mutex struct {
 	initialized bool
 
-	Name  string
+	// Name of the Mutex used in the DynamoDB table.
+	Name string
+	// Removed soon
 	Value string
-	id    int64
+	// Amount of time before a locked mutex is considered abandoned.
+	Expiry time.Duration
+	id     int64
 
-	AWSRegion     string
-	AWSSession    *session.Session
+	// The AWS Region where the DynamoDB table resides.
+	AWSRegion string
+	// The AWS Session handle
+	AWSSession *session.Session
+	// Used to ignore AWS_* environment variables in favor of IAM policy permissions.
+	// Use only if both are set up. By default, environment variables take precedence.
 	IgnoreEnvVars bool
-	DDBSession    *dynamodb.DynamoDB
-	DDBTableName  string
-	timeout       time.Duration
+	// The DynamoDB Session handle
+	DDBSession *dynamodb.DynamoDB
+	// The DynamoDB Table name
+	DDBTableName string
+	timeout      time.Duration
+	timeoutSet   bool
 }
 
 func (m *Mutex) initialization() (err error) {
@@ -130,8 +145,9 @@ func (m *Mutex) initialization() (err error) {
 		m.id = rand.Int63()
 	}
 
-	// Todo: Make the timeout configurable
-	m.timeout = 10 * time.Second
+	if !m.timeoutSet {
+		m.timeout = 5 * time.Second
+	}
 	m.initialized = true
 	return
 
@@ -141,6 +157,24 @@ func (m *Mutex) tryLock() (err error) {
 
 	// Create lock in database
 	condition := "attribute_not_exists(#name) OR attribute_not_exists(#id) OR #id = :zero OR #id = :id"
+	expressionAttributeValues := map[string]*dynamodb.AttributeValue{
+		":lastwrite": {
+			N: aws.String(strconv.FormatInt(time.Now().UnixNano(), 10)),
+		},
+		":id": {
+			N: aws.String(strconv.FormatInt(m.id, 10)),
+		},
+		":zero": {
+			N: aws.String("0"),
+		},
+	}
+
+	if m.Expiry > 0 {
+		condition = condition + " OR ( #id <> :id AND #lastwrite < :nowminusexpiry )"
+		expressionAttributeValues[":nowminusexpiry"] = &dynamodb.AttributeValue{
+			N: aws.String(strconv.FormatInt(time.Now().UnixNano()-m.Expiry.Nanoseconds(), 10)),
+		}
+	}
 
 	result, err := m.DDBSession.UpdateItem(&dynamodb.UpdateItemInput{
 		ConditionExpression: &condition,
@@ -149,17 +183,7 @@ func (m *Mutex) tryLock() (err error) {
 			"#lastwrite": aws.String("LastWrite"),
 			"#id":        aws.String("LockerID"),
 		},
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":lastwrite": {
-				N: aws.String(strconv.FormatInt(time.Now().UnixNano(), 10)),
-			},
-			":id": {
-				N: aws.String(strconv.FormatInt(m.id, 10)),
-			},
-			":zero": {
-				N: aws.String("0"),
-			},
-		},
+		ExpressionAttributeValues: expressionAttributeValues,
 		Key: map[string]*dynamodb.AttributeValue{
 			"Name": {
 				S: aws.String(m.Name),
@@ -219,6 +243,23 @@ func (m *Mutex) tryUnlock() (err error) {
 	return
 }
 
+// WithTimeout defines a custom timeout value when trying to lock a key.
+//
+// Set it to 0 for no timeout.
+//
+// Default timeout value: 5 seconds
+func (m Mutex) WithTimeout(timeout time.Duration) Mutex {
+	m.timeout = timeout
+	m.timeoutSet = true
+	return m
+}
+
+// Lock locks the Mutex and retrieves its value from the database.
+// If the lock is already in use, the calling goroutine blocks until the mutex is available
+// or the timeout period has been reached.
+//
+// It ignores previous locks if an expiry period has been set. If the previous lock has expired, it immediately
+// locks the lock.
 func (m *Mutex) Lock() {
 	m.initialization()
 	started := time.Now().UnixNano()
@@ -242,6 +283,11 @@ func (m *Mutex) Lock() {
 	}
 }
 
+// Unlock writes the value into the database and unlocks the Mutex.
+// It is a run-time error if the Mutex is not locked on entry to Unlock.
+//
+// A locked Mutex is associated with a particular Mutex variable.
+// If a mutex expires, it is automatically considered unlocked.
 func (m *Mutex) Unlock() {
 	m.initialization()
 	err := m.tryUnlock()
@@ -255,12 +301,60 @@ func (m *Mutex) Unlock() {
 	}
 }
 
-func (m *Mutex) LockAndGet() string {
-	m.Lock()
+// GetValueInt64 gets the value from the Mutex and returns it as an int64.
+//
+// It does not check if the Mutex was locked beforehand. An unlocked Mutex will return an out-of-sync result.
+func (m *Mutex) GetValueInt64() int64 {
+
+	if m.Value == "" {
+		return 0
+	}
+
+	result, err := strconv.ParseInt(m.Value, 10, 64)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return result
+}
+
+// SetValueInt64 sets the int64 value in the Mutex. It does not check if the Mutex was locked beforehand. It does not write
+// the value into the database. The value is written to the database during Unlock.
+//
+// See example(s) at GetValueInt64
+func (m *Mutex) SetValueInt64(value int64) {
+	m.Value = strconv.FormatInt(value, 10)
+}
+
+// GetValueString gets the value from the Mutex and returns it as a string.
+//
+// It does not check if the Mutex was locked beforehand. An unlocked Mutex will return an out-of-sync result.
+func (m *Mutex) GetValueString() string {
 	return m.Value
 }
 
-func (m *Mutex) SetAndUnlock(value string) {
+// SetValueString sets the string value in the Mutex. It does not check if the Mutex was locked beforehand. It does not write
+// the value into the database. The value is written to the database during Unlock.
+//
+// See example(s) at GetValueString
+func (m *Mutex) SetValueString(value string) {
 	m.Value = value
+}
+
+// LockAndGetValueString is shorthand for locking the Mutex and retrieving its string value.
+func (m *Mutex) LockAndGetValueString() string {
+	m.Lock()
+	return m.GetValueString()
+}
+
+// SetValueStringAndUnlock is shorthand for setting string the value in the Mutex and unlocking it.
+func (m *Mutex) SetValueStringAndUnlock(value string) {
+	m.SetValueString(value)
 	m.Unlock()
+}
+
+// GetTimeout retrieves the timeout value set in the Mutex.
+// Default value is 5 seconds.
+func (m *Mutex) GetTimeout() time.Duration {
+	return m.timeout
 }

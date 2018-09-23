@@ -7,21 +7,16 @@ It works similarly to the built-in sync library, only it synchronizes across mul
 
 This is achieved by storing the semaphore state and the value on a remote database.
 
-Currently only DynamoDB is implemented. This might change in the future
+Currently only DynamoDB is implemented. This might change in the future (Redis is considered currently).
 
 ## Prerequisites
 
-1. Install dep from [here](https://github.com/golang/dep/releases).
-2. Run `make dep_vendor_deps`
-3. Set up your AWS API keys (or IAM role)
+- DB access for the chosen implementation
 
-## How to use
+## Documentation
 
-- Run `make build` or `make test`
-
-OR
-
-- import "github.com/greg-szabo/dsync/ddb/sync"
+- [DynamoDB implementation](https://golang.org/pkg/greg-szabo/dsync/ddb/sync)
+- [dsync interface](https://golang.org/pkg/greg-szabo/dsync/dsync)
 
 ## Acknowledgements
 
