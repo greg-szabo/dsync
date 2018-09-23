@@ -13,7 +13,38 @@ Currently only DynamoDB is implemented. This might change in the future (Redis i
 
 - DB access for the chosen implementation
 
-## Documentation
+## How to use
+
+```bash
+$ export AWS_ACCESS_KEY=access
+$ export AWS_SECRET_KEY=secret
+```
+
+```go
+// ./main.go
+
+package main
+
+import "github.com/greg-szabo/dsync/ddb/sync"
+
+func main() {
+		m := sync.Mutex{}
+		m.Lock()
+		defer m.Unlock()
+		// do important work here
+		return
+}
+```
+
+```bash
+$ go get github.com/greg-szabo/dsync/ddb/sync
+$ go run main.go
+```
+
+The locking mechanism will automatically create a `Locks` database in DynamoDB and store the Mutex details there.
+
+
+## API Documentation
 
 - [DynamoDB implementation](https://golang.org/pkg/greg-szabo/dsync/ddb/sync)
 - [dsync interface](https://golang.org/pkg/greg-szabo/dsync/dsync)
