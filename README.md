@@ -41,7 +41,9 @@ $ go get github.com/greg-szabo/dsync/ddb/sync
 $ go run main.go
 ```
 
-The locking mechanism will automatically create a `Locks` database in DynamoDB and store the Mutex details there.
+The locking mechanism will automatically create a `Locks` database in DynamoDB and stores the Mutex details.
+
+Configuration parameters are described in the API documentation.
 
 
 ## API Documentation
