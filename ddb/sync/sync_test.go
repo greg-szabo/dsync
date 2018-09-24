@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/stretchr/testify/assert"
 	"testing"
 
@@ -9,6 +11,12 @@ import (
 	"sync"
 	"time"
 )
+
+func DeleteTable(m Mutex) {
+	m.DDBSession.DeleteTable(&dynamodb.DeleteTableInput{
+		TableName: aws.String(m.DDBTableName),
+	})
+}
 
 func Test_DDBLock_Default(t *testing.T) {
 	m := Mutex{}
@@ -24,6 +32,7 @@ func Test_DDBLock_InitSettings(t *testing.T) {
 	}
 	assert.NotPanics(t, m.Lock)
 	assert.NotPanics(t, m.Unlock)
+	DeleteTable(m)
 }
 
 func Test_DDBLock_ReuseConnection(t *testing.T) {
@@ -38,6 +47,7 @@ func Test_DDBLock_ReuseConnection(t *testing.T) {
 	assert.NotPanics(t, m.Unlock)
 	assert.NotPanics(t, n.Lock)
 	assert.NotPanics(t, n.Unlock)
+	DeleteTable(m)
 }
 
 func Test_DDBLock_TwoConnectionsAndADeadlock(t *testing.T) {
@@ -46,6 +56,7 @@ func Test_DDBLock_TwoConnectionsAndADeadlock(t *testing.T) {
 	n := Mutex{DDBTableName: TableName}
 	assert.NotPanics(t, m.Lock)
 	assert.Panics(t, n.Lock)
+	DeleteTable(m)
 }
 
 func Test_DDBLock_CannotUnlockOthers(t *testing.T) {
@@ -54,6 +65,7 @@ func Test_DDBLock_CannotUnlockOthers(t *testing.T) {
 	n := Mutex{DDBTableName: TableName}
 	assert.NotPanics(t, m.Lock)
 	assert.Panics(t, n.Unlock)
+	DeleteTable(m)
 }
 
 func Test_DDBLock_ParallelCount(t *testing.T) {
@@ -67,13 +79,14 @@ func Test_DDBLock_ParallelCount(t *testing.T) {
 			defer wg.Done()
 			assert.NotPanics(t, m.Lock)
 			defer assert.NotPanics(t, m.Unlock)
-			i, _ := strconv.Atoi(m.Value)
-			m.Value = strconv.Itoa(i + 1)
+			i := m.GetValueInt64()
+			m.SetValueInt64(i + 1)
 		}(m)
 	}
 	wg.Wait()
 	assert.Equal(t, strconv.Itoa(thisMany), m.LockAndGetValueString())
 	assert.NotPanics(t, m.Unlock)
+	DeleteTable(m)
 }
 
 func Test_ValueTests(t *testing.T) {
@@ -88,6 +101,7 @@ func Test_ValueTests(t *testing.T) {
 	assert.Equal(t, m.GetValueInt64(), testValueInt64+1)
 	assert.Equal(t, m.GetValueString(), strconv.FormatInt(testValueInt64+1, 10))
 	assert.NotPanics(t, m.Unlock)
+	DeleteTable(m)
 }
 
 func Test_Timeout(t *testing.T) {
@@ -104,12 +118,13 @@ func Test_Timeout(t *testing.T) {
 	assert.Equal(t, endTime.Sub(startTime) > timeout, true)
 	assert.Equal(t, endTime.Sub(startTime) < timeout+time.Second, true)
 	assert.NotPanics(t, m.Unlock)
+	DeleteTable(m)
 }
 
 func Test_Expiry(t *testing.T) {
 	timeout := 1 * time.Second
 	expiry := 3 * time.Second
-	TableName := fmt.Sprintf("Test-Values-%d", time.Now().Unix())
+	TableName := fmt.Sprintf("Test-Expiry-%d", time.Now().Unix())
 	m := Mutex{DDBTableName: TableName, Expiry: expiry}.WithTimeout(timeout)
 	n := Mutex{DDBTableName: TableName, Expiry: expiry}.WithTimeout(timeout)
 	assert.NotPanics(t, m.Lock)
@@ -121,9 +136,8 @@ func Test_Expiry(t *testing.T) {
 	assert.Equal(t, endTime.Sub(startTime) < 1*time.Second, true)
 	assert.Panics(t, m.Unlock)
 	assert.NotPanics(t, n.Unlock)
+	DeleteTable(m)
 }
-
-// Todo: Cleanup test tables at the end
 
 func ExampleMutex_Lock() {
 	m := Mutex{}

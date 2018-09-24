@@ -19,15 +19,11 @@ import (
 // A Mutex is a mutual exclusion lock.
 // This version of a Mutex has extra properties for the AWS session and DynamoDB session details.
 type Mutex struct {
-	initialized bool
-
 	// Name of the Mutex used in the DynamoDB table.
 	Name string
-	// Removed soon
-	Value string
+
 	// Amount of time before a locked mutex is considered abandoned.
 	Expiry time.Duration
-	id     int64
 
 	// The AWS Region where the DynamoDB table resides.
 	AWSRegion string
@@ -40,8 +36,14 @@ type Mutex struct {
 	DDBSession *dynamodb.DynamoDB
 	// The DynamoDB Table name
 	DDBTableName string
-	timeout      time.Duration
-	timeoutSet   bool
+
+	initialized bool
+
+	timeout    time.Duration
+	timeoutSet bool
+
+	value string
+	id    int64
 }
 
 func (m *Mutex) initialization() (err error) {
@@ -61,8 +63,8 @@ func (m *Mutex) initialization() (err error) {
 		m.Name = "Lock"
 	}
 
-	if m.Value == "" {
-		m.Value = "0"
+	if m.GetValueString() == "" {
+		m.SetValueInt64(0)
 	}
 
 	// Create AWS session, if it does not exist
@@ -108,8 +110,8 @@ func (m *Mutex) initialization() (err error) {
 			},
 			// Todo: Make the capacity units configurable
 			ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
-				ReadCapacityUnits:  aws.Int64(1),
-				WriteCapacityUnits: aws.Int64(1),
+				ReadCapacityUnits:  aws.Int64(5),
+				WriteCapacityUnits: aws.Int64(5),
 			},
 			TableName: aws.String(m.DDBTableName),
 		})
@@ -199,7 +201,7 @@ func (m *Mutex) tryLock() (err error) {
 	}
 
 	if value, ok := result.Attributes["Value"]; ok {
-		m.Value = *value.S
+		m.SetValueString(*value.S)
 	}
 
 	return
@@ -228,7 +230,7 @@ func (m *Mutex) tryUnlock() (err error) {
 				N: aws.String("0"),
 			},
 			":value": {
-				S: aws.String(m.Value),
+				S: aws.String(m.GetValueString()),
 			},
 		},
 		Key: map[string]*dynamodb.AttributeValue{
@@ -271,7 +273,7 @@ func (m *Mutex) Lock() {
 					if started < time.Now().UnixNano()-m.timeout.Nanoseconds() {
 						panic(errors.New("could not lock mutex"))
 					} else {
-						time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
+						time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 						continue
 					}
 				}
@@ -306,11 +308,11 @@ func (m *Mutex) Unlock() {
 // It does not check if the Mutex was locked beforehand. An unlocked Mutex will return an out-of-sync result.
 func (m *Mutex) GetValueInt64() int64 {
 
-	if m.Value == "" {
+	if m.value == "" {
 		return 0
 	}
 
-	result, err := strconv.ParseInt(m.Value, 10, 64)
+	result, err := strconv.ParseInt(m.value, 10, 64)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -323,14 +325,14 @@ func (m *Mutex) GetValueInt64() int64 {
 //
 // See example(s) at GetValueInt64
 func (m *Mutex) SetValueInt64(value int64) {
-	m.Value = strconv.FormatInt(value, 10)
+	m.value = strconv.FormatInt(value, 10)
 }
 
 // GetValueString gets the value from the Mutex and returns it as a string.
 //
 // It does not check if the Mutex was locked beforehand. An unlocked Mutex will return an out-of-sync result.
 func (m *Mutex) GetValueString() string {
-	return m.Value
+	return m.value
 }
 
 // SetValueString sets the string value in the Mutex. It does not check if the Mutex was locked beforehand. It does not write
@@ -338,7 +340,7 @@ func (m *Mutex) GetValueString() string {
 //
 // See example(s) at GetValueString
 func (m *Mutex) SetValueString(value string) {
-	m.Value = value
+	m.value = value
 }
 
 // LockAndGetValueString is shorthand for locking the Mutex and retrieving its string value.
