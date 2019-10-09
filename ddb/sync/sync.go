@@ -320,12 +320,37 @@ func (m *Mutex) GetValueInt64() int64 {
 	return result
 }
 
+// GetValueUint64 gets the value from the Mutex and returns it as an uint64.
+//
+// It does not check if the Mutex was locked beforehand. An unlocked Mutex will return an out-of-sync result.
+func (m *Mutex) GetValueUint64() uint64 {
+
+	if m.value == "" {
+		return 0
+	}
+
+	result, err := strconv.ParseUint(m.value, 10, 64)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return result
+}
+
 // SetValueInt64 sets the int64 value in the Mutex. It does not check if the Mutex was locked beforehand. It does not write
 // the value into the database. The value is written to the database during Unlock.
 //
 // See example(s) at GetValueInt64
 func (m *Mutex) SetValueInt64(value int64) {
 	m.value = strconv.FormatInt(value, 10)
+}
+
+// SetValueUint64 sets the uint64 value in the Mutex. It does not check if the Mutex was locked beforehand. It does not write
+// the value into the database. The value is written to the database during Unlock.
+//
+// See example(s) at GetValueUint64
+func (m *Mutex) SetValueUint64(value uint64) {
+	m.value = strconv.FormatUint(value, 10)
 }
 
 // GetValueString gets the value from the Mutex and returns it as a string.
