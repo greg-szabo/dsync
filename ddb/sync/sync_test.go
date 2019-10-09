@@ -93,13 +93,20 @@ func Test_ValueTests(t *testing.T) {
 	TableName := fmt.Sprintf("Test-Values-%d", time.Now().Unix())
 	m := Mutex{DDBTableName: TableName}
 	testValueInt64 := time.Now().Unix()
+	testValueUint64 := testValueInt64 + 5
 	assert.NotPanics(t, m.Lock)
 	m.SetValueInt64(testValueInt64)
 	assert.Equal(t, m.GetValueInt64(), testValueInt64)
 	assert.Equal(t, m.GetValueString(), strconv.FormatInt(testValueInt64, 10))
+	m.SetValueUint64(uint64(testValueUint64))
+	assert.Equal(t, m.GetValueUint64(), uint64(testValueUint64))
+	assert.Equal(t, m.GetValueString(), strconv.FormatUint(uint64(testValueUint64), 10))
 	m.SetValueString(strconv.FormatInt(testValueInt64+1, 10))
 	assert.Equal(t, m.GetValueInt64(), testValueInt64+1)
 	assert.Equal(t, m.GetValueString(), strconv.FormatInt(testValueInt64+1, 10))
+	m.SetValueString(strconv.FormatUint(uint64(testValueUint64+2), 10))
+	assert.Equal(t, m.GetValueUint64(), uint64(testValueUint64+2))
+	assert.Equal(t, m.GetValueString(), strconv.FormatUint(uint64(testValueUint64+2), 10))
 	assert.NotPanics(t, m.Unlock)
 	DeleteTable(m)
 }

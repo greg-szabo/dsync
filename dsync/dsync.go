@@ -7,7 +7,9 @@ type Locker interface {
 	Lock()
 	Unlock()
 	GetValueInt64() int64
+	GetValueUint64() uint64
 	SetValueInt64(value int64)
+	SetValueUint64(value uint64)
 	GetValueString() string
 	SetValueString(value string)
 }
